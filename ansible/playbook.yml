@@ -1,0 +1,81 @@
+---
+- hosts: pxeserver # part running on all hosts
+  become: true
+  tasks:
+  - name: install packages 
+    apt:
+      name: 
+        - apache2
+        - atftpd
+        - isc-dhcp-server
+      state: latest
+      update_cache: yes
+
+#Создание каталога /iso и назначение прав 755  
+  - name: Create ISO directory
+    file:
+      path: /iso
+      state: directory
+      mode: '0755'
+# Копировнание конфига Apache
+  - name: set up apache2 config
+    template:
+      src: pxeboot.conf
+      dest: /etc/apache2/sites-enabled/pxeboot.conf 
+      owner: root
+      group: root
+      mode: 0640
+# Копирование файла автоматической установки
+  - name: set up preseed file
+    template:
+      src: debian-12-preseed.cfg
+      dest: /iso/debian-12-preseed.cfg
+# перезапуск сервиса apache
+  - name: restart apache2
+    service:
+      name: apache2
+      state: restarted
+      enabled: true
+        # Скачивание образа Debian
+  - name: Download Debian netboot
+    get_url:
+     url:  http://ftp.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/netboot.tar.gz
+     dest: ~/netboot.tar.gz
+     mode: '0755'
+
+       # Распаковка архива
+  - name: Unarchive package
+    unarchive:
+      src: /root/netboot.tar.gz
+      dest: /srv/tftp
+      extra_opts: [--strip-components=1]
+      remote_src: yes
+        #Копирование меню загрузки
+  - name: set up menu config
+    template:
+      src: menu.cfg
+      dest: /srv/tftp/debian-installer/amd64/boot-screens/menu.cfg 
+        #Перезапуск сервиса tftp
+  - name: restart atftpd
+    service:
+      name: atftpd
+      state: restarted
+      enabled: true
+      #Копирование конфига dhcp сервера
+  - name: set up dhcp-server
+    template:
+      src: dhcpd.conf
+      dest: /etc/dhcp/dhcpd.conf
+      mode: '0644'
+
+  - name: set eth to dhcp
+    replace:
+      path: /etc/default/isc-dhcp-server
+      regexp: 'INTERFACESv4=""'
+      replace: 'INTERFACESv4="eth1"'
+        #Перезапуск сервиса DHCP
+  - name: restart dhcp-server
+    service:
+      name: isc-dhcp-server
+      state: restarted
+      enabled: true
